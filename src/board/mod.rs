@@ -1,3 +1,5 @@
+use burn::Tensor;
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum Player {
     PlayerOne,
@@ -28,4 +30,6 @@ pub trait Board {
 
     fn legal_actions(&self) -> Vec<Self::Action>;
     fn make_action(&mut self, action: Self::Action);
+
+    fn to_tensor(self) -> Tensor<4>;
 }
