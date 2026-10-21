@@ -1,4 +1,4 @@
-use burn::tensor::{Tensor, activation as F};
+use burn::tensor::{Tensor, activation as F, s};
 
 fn main() {
     let b = 8;
@@ -32,4 +32,7 @@ fn main() {
     let y: Tensor<3> = x.permute([0, 2, 3, 1]).flatten(2, 3);
 
     println!("{:?}", y.shape());
+
+    let z = y.slice(s![.., 0]).squeeze::<2>();
+    println!("{:?}", z.shape());
 }
