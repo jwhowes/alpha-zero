@@ -1,38 +1,24 @@
-use burn::tensor::{Tensor, activation as F, s};
+use alpha_zero::ViTConfig;
+use burn::tensor::{Device, Int, Tensor};
 
 fn main() {
     let b = 8;
-    let l = 12;
-    let d = 64;
+    let w = 4;
+    let h = 4;
+    let d_model = 64;
+    let n_classes = 3;
+    let n_blocks = 4;
     let n_heads = 4;
+    let n_actions = 10;
 
-    let scale = ((d as f32) / (n_heads as f32)).sqrt();
+    let device = Device::wgpu(Default::default());
 
-    let device = Default::default();
+    let x = Tensor::<3, Int>::zeros([b, w, h], &device);
 
-    let q: Tensor<4> = Tensor::<3>::zeros([b, l, d], &device)
-        .unfold(2, n_heads, n_heads)
-        .permute([0, 3, 1, 2]);
-    let k: Tensor<4> = Tensor::<3>::zeros([b, l, d], &device)
-        .unfold(2, n_heads, n_heads)
-        .permute([0, 3, 2, 1]);
-    let v: Tensor<4> = Tensor::<3>::zeros([b, l, d], &device)
-        .unfold(2, n_heads, n_heads)
-        .permute([0, 3, 1, 2]);
+    let model =
+        ViTConfig::new(n_classes, w, h, n_blocks, n_heads, d_model, n_actions).init(&device);
 
-    let attn = q.matmul(k);
-
-    println!("{:?}", attn.shape());
-
-    let x = (F::softmax(attn, 3) / scale).matmul(v);
-
-    println!("{:?}", [b, n_heads, l, d / n_heads]);
-    println!("{:?}", x.shape());
-
-    let y: Tensor<3> = x.permute([0, 2, 3, 1]).flatten(2, 3);
+    let y = model.forward(x);
 
     println!("{:?}", y.shape());
-
-    let z = y.slice(s![.., 0]).squeeze::<2>();
-    println!("{:?}", z.shape());
 }

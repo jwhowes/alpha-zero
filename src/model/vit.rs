@@ -98,10 +98,12 @@ impl Attention {
 
         let attn = q.matmul(k);
 
-        self.w_o
-            .forward((F::softmax(attn, 3) / self.scale).matmul(v))
-            .permute([0, 2, 3, 1])
-            .flatten(2, 3)
+        self.w_o.forward(
+            (F::softmax(attn, 3) / self.scale)
+                .matmul(v)
+                .permute([0, 2, 3, 1])
+                .flatten(2, 3),
+        )
     }
 }
 
@@ -203,9 +205,17 @@ impl ViTConfig {
 
 impl ViT {
     pub fn forward(&self, board: Tensor<3, Int>) -> Tensor<2> {
+        let b = board.shape()[0];
+
         let x = self.emb.forward(board.flatten::<2>(1, 2));
 
-        let mut x = Tensor::cat(vec![self.cls_emb.val(), x + self.pos_emb.val()], 1);
+        let mut x = Tensor::cat(
+            vec![
+                self.cls_emb.val().expand([b as isize, -1, -1]),
+                x + self.pos_emb.val(),
+            ],
+            1,
+        );
 
         for block in &self.blocks {
             x = block.forward(x);
