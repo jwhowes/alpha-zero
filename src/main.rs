@@ -9,14 +9,12 @@ fn main() {
     let n_classes = 3;
     let n_blocks = 4;
     let n_heads = 4;
-    let n_actions = 10;
 
     let device = Device::wgpu(Default::default());
 
     let x = Tensor::<3, Int>::zeros([b, w, h], &device);
 
-    let model =
-        ViTConfig::new(n_classes, w, h, n_blocks, n_heads, d_model, n_actions).init(&device);
+    let model = ViTConfig::new(n_classes, w, h, n_blocks, n_heads, d_model).init(&device);
 
     let y = model.forward(x);
 

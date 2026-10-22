@@ -1,4 +1,6 @@
-use burn::Tensor;
+use burn::{Tensor, tensor::Int};
+
+pub type BoardTensor = Tensor<3, Int>;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Player {
@@ -31,5 +33,5 @@ pub trait Board {
     fn legal_actions(&self) -> Vec<Self::Action>;
     fn make_action(&mut self, action: Self::Action);
 
-    fn to_tensor(self) -> Tensor<4>;
+    fn to_tensor(self) -> BoardTensor;
 }

@@ -1,9 +1,10 @@
 use std::{f32::consts::SQRT_2, iter};
 
 use rand::seq::IteratorRandom;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::{
-    board::{Board, Player, Winner},
+    board::{Board, BoardTensor, Player, Winner},
     model::evaluate,
 };
 
@@ -42,7 +43,12 @@ impl MCTSNode {
             .collect()
     }
 
-    pub fn run_simulation<B: Board>(&mut self, mut board: B, total_visits: f32) -> f32 {
+    pub async fn run_simulation<B: Board>(
+        &mut self,
+        mut board: B,
+        total_visits: f32,
+        tx: &mpsc::Sender<(BoardTensor, oneshot::Sender<f32>)>,
+    ) -> f32 {
         if let Some(winner) = board.winner() {
             return winner.value();
         }
@@ -103,7 +109,8 @@ impl MCTSNode {
                         self.children[action_idx]
                             .as_mut()
                             .unwrap()
-                            .run_simulation(board, self.num_visits[action_idx] as f32),
+                            .run_simulation(board, self.num_visits[action_idx] as f32, tx)
+                            .await,
                     )
                 }
 
@@ -114,7 +121,7 @@ impl MCTSNode {
 
                     *leaf = Some(Self::new(&board));
 
-                    (action_idx, evaluate(board))
+                    (action_idx, evaluate(board, tx).await.unwrap())
                 }
             }
         };

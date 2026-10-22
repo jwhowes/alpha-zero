@@ -174,8 +174,6 @@ pub struct ViTConfig {
     n_blocks: usize,
     n_heads: usize,
     d_model: usize,
-
-    n_actions: usize,
 }
 
 impl ViTConfig {
@@ -196,7 +194,7 @@ impl ViTConfig {
                 .map(|_| vit_block_config.init(device))
                 .collect(),
 
-            head: LinearConfig::new(self.d_model, self.n_actions)
+            head: LinearConfig::new(self.d_model, 1)
                 .with_bias(false)
                 .init(device),
         }
@@ -204,7 +202,7 @@ impl ViTConfig {
 }
 
 impl ViT {
-    pub fn forward(&self, board: Tensor<3, Int>) -> Tensor<2> {
+    pub fn forward(&self, board: Tensor<3, Int>) -> Tensor<1> {
         let b = board.shape()[0];
 
         let x = self.emb.forward(board.flatten::<2>(1, 2));
@@ -221,6 +219,6 @@ impl ViT {
             x = block.forward(x);
         }
 
-        self.head.forward(x.slice(s![.., 0]).squeeze())
+        self.head.forward(x.slice(s![.., 0])).squeeze()
     }
 }
