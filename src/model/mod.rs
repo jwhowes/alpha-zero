@@ -11,10 +11,9 @@ pub mod vit;
 
 const MAX_BATCH_SIZE: usize = 4;
 
-pub async fn evaluate<B: Board>(
-    board: B,
-    tx: &mpsc::Sender<(BoardTensor, oneshot::Sender<f32>)>,
-) -> anyhow::Result<f32> {
+pub type EvalQueue = mpsc::Sender<(BoardTensor, oneshot::Sender<f32>)>;
+
+pub async fn evaluate<B: Board>(board: B, tx: &EvalQueue) -> anyhow::Result<f32> {
     let player = board.player();
 
     let (v_tx, v_rx) = oneshot::channel();

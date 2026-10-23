@@ -1,23 +1,23 @@
-use std::{f32::consts::SQRT_2, iter};
+use std::{f32::consts::SQRT_2, iter, sync::Arc};
 
-use rand::seq::IteratorRandom;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::Mutex;
 
 use crate::{
-    board::{Board, BoardTensor, Player, Winner},
-    model::evaluate,
+    board::{Board, Player, Winner},
+    model::{EvalQueue, evaluate},
 };
 
 const GAMMA: f32 = 0.95;
 const C_UCT: f32 = SQRT_2;
+const VIRTUAL_LOSS: i32 = 3;
 
 pub struct MCTSNode {
     winner: Option<Winner>,
 
-    num_visits: Vec<usize>,
+    num_visits: Vec<i32>,
     total_action_value: Vec<f32>,
 
-    children: Vec<Option<MCTSNode>>,
+    children: Vec<Option<Arc<Mutex<MCTSNode>>>>,
 }
 
 impl MCTSNode {
@@ -44,10 +44,10 @@ impl MCTSNode {
     }
 
     pub async fn run_simulation<B: Board>(
-        &mut self,
+        node: Arc<Mutex<Self>>,
         mut board: B,
         total_visits: f32,
-        tx: &mpsc::Sender<(BoardTensor, oneshot::Sender<f32>)>,
+        eval_queue: &EvalQueue,
     ) -> f32 {
         if let Some(winner) = board.winner() {
             return winner.value();
@@ -56,14 +56,16 @@ impl MCTSNode {
         let player = board.player();
         let actions = board.legal_actions();
 
-        let (action_idx, value) = if let Some((action_idx, _)) = self
+        let (action_idx, value) = if let Some((action_idx, _)) = node
+            .lock()
+            .await
             .children
             .iter()
             .enumerate()
             .find(|(_, c)| match c.as_ref() {
                 None => false,
 
-                Some(c) => match c.winner {
+                Some(c) => match c.blocking_lock().winner {
                     None | Some(Winner::Tie) => false,
 
                     Some(Winner::Player(p)) => p == player,
@@ -78,59 +80,69 @@ impl MCTSNode {
                     Player::PlayerTwo => -1.,
                 },
             )
+        } else if let Some((action_idx, leaf)) = node
+            .lock()
+            .await
+            .children
+            .iter_mut()
+            .enumerate()
+            .filter(|(_, c)| c.is_none())
+            .next()
+        {
+            // The leaf is locked during evaluation
+            board.make_action(actions[action_idx]);
+
+            *leaf = Some(Arc::new(Mutex::new(Self::new(&board))));
+
+            (action_idx, evaluate(board, eval_queue).await.unwrap())
         } else {
-            let leaves = self
-                .children
-                .iter_mut()
+            // If no children are leaves, select the best
+            let action_idx = node
+                .lock()
+                .await
+                .value(total_visits)
+                .into_iter()
                 .enumerate()
-                .filter(|(_, c)| c.is_none());
+                .max_by(|(_, v1), (_, v2)| {
+                    if v1 < v2 {
+                        std::cmp::Ordering::Less
+                    } else {
+                        std::cmp::Ordering::Greater
+                    }
+                })
+                .unwrap()
+                .0;
 
-            match leaves.choose(&mut rand::rng()) {
-                None => {
-                    // If no children are leaves, select the best
-                    let action_idx = self
-                        .value(total_visits)
-                        .into_iter()
-                        .enumerate()
-                        .max_by(|(_, v1), (_, v2)| {
-                            if v1 < v2 {
-                                std::cmp::Ordering::Less
-                            } else {
-                                std::cmp::Ordering::Greater
-                            }
-                        })
-                        .unwrap()
-                        .0;
+            board.make_action(actions[action_idx]);
 
-                    board.make_action(actions[action_idx]);
+            let (child, total_visits) = {
+                let mut lock = node.lock().await;
 
-                    (
-                        action_idx,
-                        self.children[action_idx]
-                            .as_mut()
-                            .unwrap()
-                            .run_simulation(board, self.num_visits[action_idx] as f32, tx)
-                            .await,
-                    )
-                }
+                let total_visits = lock.num_visits[action_idx];
+                lock.num_visits[action_idx] += VIRTUAL_LOSS;
 
-                Some((action_idx, leaf)) => {
-                    // If any children are leaves, select a random one
+                (
+                    Arc::clone(lock.children[action_idx].as_ref().unwrap()),
+                    total_visits as f32,
+                )
+            };
 
-                    board.make_action(actions[action_idx]);
+            let v = Self::run_simulation(child, board, total_visits, eval_queue).await;
 
-                    *leaf = Some(Self::new(&board));
+            node.lock().await.num_visits[action_idx] -= VIRTUAL_LOSS;
 
-                    (action_idx, evaluate(board, tx).await.unwrap())
-                }
-            }
+            (action_idx, v)
         };
 
-        self.num_visits[action_idx] += 1;
-        self.total_action_value[action_idx] += match player {
-            Player::PlayerOne => value,
-            Player::PlayerTwo => -value,
-        };
+        {
+            let mut lock = node.lock().await;
+
+            lock.num_visits[action_idx] += 1;
+            lock.total_action_value[action_idx] += match player {
+                Player::PlayerOne => value,
+                Player::PlayerTwo => -value,
+            };
+        }
 
         GAMMA * value
     }
