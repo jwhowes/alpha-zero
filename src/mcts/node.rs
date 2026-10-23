@@ -14,10 +14,10 @@ const VIRTUAL_LOSS: i32 = 3;
 pub struct MCTSNode {
     winner: Option<Winner>,
 
-    num_visits: Vec<i32>,
+    pub num_visits: Vec<i32>,
     total_action_value: Vec<f32>,
 
-    children: Vec<Option<Arc<Mutex<MCTSNode>>>>,
+    pub children: Vec<Option<Arc<Mutex<MCTSNode>>>>,
 }
 
 impl MCTSNode {
