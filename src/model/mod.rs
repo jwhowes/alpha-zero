@@ -4,7 +4,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     ViTConfig,
-    board::{Board, BoardTensor},
+    board::{Board, BoardTensor, Player},
 };
 
 pub mod vit;
@@ -15,11 +15,19 @@ pub async fn evaluate<B: Board>(
     board: B,
     tx: &mpsc::Sender<(BoardTensor, oneshot::Sender<f32>)>,
 ) -> anyhow::Result<f32> {
+    let player = board.player();
+
     let (v_tx, v_rx) = oneshot::channel();
 
     tx.send((board.to_tensor(), v_tx)).await?;
 
-    Ok(v_rx.await?)
+    let v = v_rx.await?;
+
+    match player {
+        Player::PlayerOne => Ok(v),
+
+        Player::PlayerTwo => Ok(-v),
+    }
 }
 
 pub async fn evaluation_thread(
